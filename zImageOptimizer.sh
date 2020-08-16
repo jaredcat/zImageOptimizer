@@ -1504,6 +1504,13 @@ else
 					;;
 			esac
 		fi
+	else
+		if [ $CHECK_ONLY -eq 1 ]; then
+			installDeps
+			echo "Exiting..."
+			echo
+			exit 0
+		fi
 	fi
 fi
 
