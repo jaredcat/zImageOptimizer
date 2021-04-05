@@ -1712,6 +1712,8 @@ if ! [ -z "$IMAGES" ]; then
 						echo " ${SIZE_BEFORE_SCALED}Kb -> ${SIZE_AFTER_SCALED}Kb"
 					fi
 				fi
+			else
+				echo
 			fi
 
 			if [[ $SIZE_BEFORE -lt $MAXFILESIZE ]]; then
