@@ -212,12 +212,6 @@ installDeps() {
 	if [ $PLATFORM_SUPPORT -eq 1 ]; then
 		echo "Installing dependencies..."
 
-		if [ $CUR_USER == "root" ]; then
-			SUDO=""
-		else
-			SUDO="sudo"
-		fi
-
 		# Hook: before-install-deps
 		includeExtensions before-install-deps
 
@@ -504,13 +498,6 @@ checkBashVersion() {
 installBashMacOS() {
 	checkHomebrew
 	brew install bash
-
-	CUR_USER=$(whoami)
-	if [ $CUR_USER == "root" ]; then
-		SUDO=""
-	else
-		SUDO="sudo"
-	fi
 
 	if [ -z $(grep '/usr/local/bin/bash' /private/etc/shells) ]; then
 		$SUDO bash -c "echo '/usr/local/bin/bash' >> /private/etc/shells"
@@ -988,6 +975,11 @@ TIME_MARKER_PATH=""
 TIME_MARKER_NAME=".timeMarker"
 LOCK_FILE_NAME="zio.lock"
 UNLOCK=0
+if [ $CUR_USER == "root" ]; then
+	SUDO=""
+else
+	SUDO="sudo"
+fi
 
 # System vars for reSmush.it
 API_URL="http://api.resmush.it"
