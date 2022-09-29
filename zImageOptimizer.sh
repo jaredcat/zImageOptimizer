@@ -212,7 +212,6 @@ installDeps() {
 	if [ $PLATFORM_SUPPORT -eq 1 ]; then
 		echo "Installing dependencies..."
 
-		CUR_USER=$(whoami)
 		if [ $CUR_USER == "root" ]; then
 			SUDO=""
 		else
@@ -980,6 +979,7 @@ EXCLUDE_LIST=""
 ALL_FOUND=1
 PARAMS_NUM=$#
 CUR_DIR=$(pwd)
+CUR_USER=$(whoami)
 SCRIPT_PATH="$(
 	cd "$(dirname "$0")"
 	pwd -P
