@@ -219,6 +219,9 @@ installDeps() {
 			SUDO="sudo"
 		fi
 
+		# Hook: before-install-deps
+		includeExtensions before-install-deps
+
 		if [ $PLATFORM == "linux" ]; then
 
 			# Hook: before-install-deps-linux
@@ -447,6 +450,9 @@ installDeps() {
 			includeExtensions after-install-deps-freebsd
 
 		fi
+
+		# Hook: after-install-deps
+		includeExtensions after-install-deps
 
 	else
 		echo "Your platform is not supported! Please install dependaces manually."
