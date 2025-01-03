@@ -947,6 +947,20 @@ usage() {
 	echo "                            incorrectly or killed by system. You must use "
 	echo "                            this option with -p|--path option."
 	echo
+	echo "    --resmush               Use resmush.it API to optimize images."
+	echo "                            This option will override all other options."
+	echo
+	echo "    --resmush-quality=<quality>   Set quality for resmush.it service. Must be "
+	echo "                            integer value from 0 to 100. Default value is "
+	echo "                            92."
+	echo
+	echo "    --resmush-maxfilesize=<szie>   Set max filesize for resmush.it service. Must be "
+	echo "                            integer value in bytes. Default value is "
+	echo "                            5242880 (5Mb)."
+	echo
+	echo "    --resmush-preserve-exif    Preserve exif flag for resmush.it service. "
+	echo "                            Default value is false."
+	echo
 }
 
 # Define default script vars
@@ -982,21 +996,12 @@ else
 fi
 
 # System vars for reSmush.it
-API_URL="http://api.resmush.it"
-QUALITY=92
-OUTPUT_DIR="."
-PRESERVE_EXIF=false
-PRESERVE_FILENAME=false
-APP_DIR=$(dirname "$0")
-TIME_LOG=true
-QUIET_MODE=false
-RED="\033[0;31m"
-GREEN="\033[0;32m"
-LBLUE="\033[0;36m"
-NC="\033[0m" # No Color
-POSITIONAL=()
-UPDATE_LOCKFILE="/tmp/.resmushit-cli.update"
-MAXFILESIZE=5242880 #5Mb
+# System vars for reSmush.it
+RESMUSH_ENABLED=0
+RESMUSH_API_URL="http://api.resmush.it"
+RESMUSH_QUALITY=92
+RESMUSH_MAXFILESIZE=5242880 #5Mb
+RESMUSH_PRESERVE_EXIF=false
 
 # Define CRON and direct using styling
 if [ "Z$(ps o comm="" -p $(ps o ppid="" -p $$))" == "Zcron" -o \
@@ -1077,6 +1082,34 @@ while [ 1 ]; do
 
 	elif [[ "$1" = "--unlock" ]]; then
 		UNLOCK=1
+
+	elif [ "${1#--resmush-quality=}" != "$1" ]; then
+		RESMUSH_QUALITY="${1#--resmush-quality=}"
+		if ! [[ "$RESMUSH_QUALITY" =~ ^[0-9]+$ ]] || [ $RESMUSH_QUALITY -lt 0 ] || [ $RESMUSH_QUALITY -gt 100 ]; then
+			echo
+			$SETCOLOR_FAILURE
+			echo "Resmush quality must be an integer between 0 and 100!"
+			$SETCOLOR_NORMAL
+			echo
+			exit 1
+		fi
+
+	elif [ "${1#--resmush-maxfilesize=}" != "$1" ]; then
+		RESMUSH_MAXFILESIZE="${1#--resmush-maxfilesize=}"
+		if ! [[ "$RESMUSH_MAXFILESIZE" =~ ^[0-9]+$ ]]; then
+			echo
+			$SETCOLOR_FAILURE
+			echo "Resmush maxfilesize must be a positive integer!"
+			$SETCOLOR_NORMAL
+			echo
+			exit 1
+		fi
+
+	elif [ "$1" = "--resmush-preserve-exif" ]; then
+		RESMUSH_PRESERVE_EXIF=true
+
+	elif [ "$1" = "--resmush" ]; then
+		RESMUSH_ENABLED=1
 
 	elif [ -z "$1" ]; then
 		break
@@ -1720,39 +1753,39 @@ if ! [ -z "$IMAGES" ]; then
 				$SETCOLOR_NORMAL
 			fi
 
-			if [[ $SIZE_BEFORE -lt $MAXFILESIZE ]]; then
-				echo "Sending picture to api..."
-				api_output=$(curl -F "files=@$IMAGE" --silent ${API_URL}"/?qlty=${QUALITY}&exif=${PRESERVE_EXIF}")
-				api_error=$(echo ${api_output} | jq .error)
+			if [ $RESMUSH_ENABLED -eq 1 ]; then
+				if [[ $SIZE_BEFORE -lt $RESMUSH_MAXFILESIZE ]]; then
+					echo "Sending picture to resmush.it API..."
+					api_output=$(curl -F "files=@$IMAGE" --silent ${RESMUSH_API_URL}"/?qlty=${RESMUSH_QUALITY}&exif=${RESMUSH_PRESERVE_EXIF}")
+					api_error=$(echo ${api_output} | jq .error)
 
-				# Check if the API returned an error
-				if [[ "$api_error" != 'null' ]]; then
-					api_error_long=$(echo ${api_output} | jq -r .error_long)
-					echo "API responds Error #${api_error} : ${api_error_long}"
-					exit 0
-				else
-					# Display result and download optimized file
-					api_percent=$(echo ${api_output} | jq .percent)
-					if [[ $api_percent == 0 ]]; then
-						$SETCOLOR_FAILURE
-						echo "File already optimized. No downloading necessary"
-						$SETCOLOR_NORMAL
+					# Check if the API returned an error
+					if [[ "$api_error" != 'null' ]]; then
+						api_error_long=$(echo ${api_output} | jq -r .error_long)
+						echo "API responds Error #${api_error} : ${api_error_long}"
 					else
-						api_src_size=$(echo ${api_output} | jq .src_size | awk '{ split( "B KB MB GB" , v ); s=1; while( $1>1024 ){ $1/=1024; s++ } printf "%.2f%s", $1, v[s] }')
-						api_dest_size=$(echo ${api_output} | jq -r .dest_size | awk '{ split( "B KB MB GB" , v ); s=1; while( $1>1024 ){ $1/=1024; s++ } printf "%.2f%s", $1, v[s] }')
-						echo -n "File optimized by "
-						$SETCOLOR_SUCCESS
-						echo -n "${api_percent}%%"
-						$SETCOLOR_NORMAL
-						echo " (from ${api_src_size} to ${api_dest_size}). Retrieving..."
-						api_file_output=$(echo ${api_output} | jq -r .dest)
-						curl ${api_file_output} --output "$IMAGE" --silent
-						echo "File saved."
-						#echo "File saved as $IMAGE"
+						# Display result and download optimized file
+						api_percent=$(echo ${api_output} | jq .percent)
+						if [[ $api_percent == 0 ]]; then
+							$SETCOLOR_FAILURE
+							echo "File already optimized by resmush.it"
+							$SETCOLOR_NORMAL
+						else
+							api_src_size=$(echo ${api_output} | jq .src_size | awk '{ split( "B KB MB GB" , v ); s=1; while( $1>1024 ){ $1/=1024; s++ } printf "%.2f%s", $1, v[s] }')
+							api_dest_size=$(echo ${api_output} | jq -r .dest_size | awk '{ split( "B KB MB GB" , v ); s=1; while( $1>1024 ){ $1/=1024; s++ } printf "%.2f%s", $1, v[s] }')
+							echo -n "Resmush.it optimized by "
+							$SETCOLOR_SUCCESS
+							echo -n "${api_percent}%"
+							$SETCOLOR_NORMAL
+							echo " (from ${api_src_size} to ${api_dest_size}). Retrieving..."
+							api_file_output=$(echo ${api_output} | jq -r .dest)
+							curl ${api_file_output} --output "$IMAGE" --silent
+							echo "Resmush.it optimization complete"
+						fi
 					fi
+				else
+					echo "File is beyond ${RESMUSH_MAXFILESIZE} bytes, skipping resmush.it"
 				fi
-			else
-				echo "File ${current_file} is beyond 5MB ($SIZE_BEFORE bytes), skipping"
 			fi
 
 			# Sizes after
