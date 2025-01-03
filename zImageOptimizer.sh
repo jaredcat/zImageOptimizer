@@ -84,6 +84,8 @@ installDeps() {
 	PLATFORM="unknown"
 	PLATFORM_ARCH="unknown"
 	PLATFORM_SUPPORT=0
+	PNGCRUSH_VERSION=1.8.13
+	ADVANCECOMP_VERSION=2.6
 	if [[ "$OSTYPE" == "linux-gnu"* ]]; then
 		PLATFORM="linux"
 		PLATFORM_DISTRIBUTION="unknown"
@@ -226,7 +228,28 @@ installDeps() {
 				includeExtensions before-install-deps-debian
 
 				$SUDO apt-get update
-				$SUDO apt-get install $DEPS_DEBIAN -y
+
+				# Handle mozjpeg installation separately
+				if [[ "$DEPS_DEBIAN" == *"mozjpeg"* ]]; then
+					DEPS_DEBIAN=${DEPS_DEBIAN/mozjpeg/}
+					$SUDO apt-get install $DEPS_DEBIAN cmake nasm libpng-dev -y
+
+					# Build and install mozjpeg
+					git clone https://github.com/mozilla/mozjpeg.git
+					cd mozjpeg
+					mkdir -p build && cd build
+					cmake -G"Unix Makefiles" \
+						-DCMAKE_BUILD_TYPE=Release \
+						-DENABLE_STATIC=TRUE \
+						-DCMAKE_INSTALL_PREFIX=/usr/local \
+						..
+					make
+					$SUDO make install
+					cd ../..
+					# $SUDO rm -rf mozjpeg
+				else
+					$SUDO apt-get install $DEPS_DEBIAN -y
+				fi
 
 				# Hook: after-install-deps-debian
 				includeExtensions after-install-deps-debian
@@ -284,14 +307,14 @@ installDeps() {
 						fi
 					done
 					if ! [ -z $ISSET_pngcrush ] && [ $ISSET_pngcrush -eq 0 ]; then
-						wget https://downloads.sourceforge.net/project/pmt/pngcrush/old-versions/1.8/1.8.0/pngcrush-1.8.0.tar.gz
-						tar -zxvf pngcrush-1.8.0.tar.gz
-						rm pngcrush-1.8.0.tar.gz
-						cd pngcrush-1.8.0
+						wget https://downloads.sourceforge.net/project/pmt/pngcrush/$PNGCRUSH_VERSION/pngcrush-$PNGCRUSH_VERSION.tar.gz
+						tar -zxvf pngcrush-$PNGCRUSH_VERSION.tar.gz
+						rm pngcrush-$PNGCRUSH_VERSION.tar.gz
+						cd pngcrush-$PNGCRUSH_VERSION
 						make
 						$SUDO cp pngcrush /bin/
 						cd ../
-						rm -rf pngcrush-1.8.0
+						rm -rf pngcrush-$PNGCRUSH_VERSION
 					fi
 
 					for p in "${!BINARY_PATHS_ARRAY[@]}"; do
@@ -301,16 +324,37 @@ installDeps() {
 					done
 					if ! [ -z $ISSET_advpng ] && [ $ISSET_advpng -eq 0 ]; then
 						$SUDO yum install zlib-devel gcc-c++ -y
-						wget https://github.com/amadvance/advancecomp/releases/download/v2.0/advancecomp-2.0.tar.gz
-						tar -zxvf advancecomp-2.0.tar.gz
-						rm advancecomp-2.0.tar.gz
-						cd advancecomp-2.0
+						wget https://github.com/amadvance/advancecomp/releases/download/v$ADVANCECOMP_VERSION/advancecomp-$ADVANCECOMP_VERSION.tar.gz
+						tar -zxvf advancecomp-$ADVANCECOMP_VERSION.tar.gz
+						rm advancecomp-$ADVANCECOMP_VERSION.tar.gz
+						cd advancecomp-$ADVANCECOMP_VERSION
 						./configure
 						make
 						$SUDO make install
 						cd ../
-						rm -rf advancecomp-2.0
+						rm -rf advancecomp-$ADVANCECOMP_VERSION
 					fi
+				fi
+
+				if [[ "$DEPS_REDHAT" == *"mozjpeg"* ]]; then
+					DEPS_REDHAT=${DEPS_REDHAT/mozjpeg/}
+					$SUDO yum install $DEPS_REDHAT cmake nasm libpng-devel -y
+
+					# Build and install mozjpeg
+					git clone https://github.com/mozilla/mozjpeg.git
+					cd mozjpeg
+					mkdir build && cd build
+					cmake -G"Unix Makefiles" \
+						-DCMAKE_BUILD_TYPE=Release \
+						-DENABLE_STATIC=TRUE \
+						-DCMAKE_INSTALL_PREFIX=/usr/local \
+						..
+					make
+					$SUDO make install
+					cd ../..
+					$SUDO rm -rf mozjpeg
+				else
+					$SUDO yum install $DEPS_REDHAT -y
 				fi
 			fi
 
@@ -1141,10 +1185,11 @@ BINARY_PATHS=$(echo $BINARY_PATHS | sed 's/\/\ /\ /g' | sed 's/\/$/\ /')
 BINARY_PATHS_ARRAY=($BINARY_PATHS)
 
 # Register image types
-declare -A IMG_TYPES_ARR
-IMG_TYPES_ARR[JPG]="JPG"
-IMG_TYPES_ARR[PNG]="PNG"
-IMG_TYPES_ARR[GIF]="GIF"
+declare -A IMG_TYPES_ARR=(
+	[JPG]="JPG"
+	[PNG]="PNG"
+	[GIF]="GIF"
+)
 
 # Hook: after-init-image-types
 includeExtensions after-init-image-types
@@ -1161,16 +1206,11 @@ if [ ${#IMG_TYPES_ARR[@]} -eq 0 ]; then
 fi
 
 # Register tools
-declare -A TOOLS
-if ! [ -z "${IMG_TYPES_ARR[JPG]}" ]; then
-	TOOLS[JPG]="jpegoptim jpegtran djpeg cjpeg"
-fi
-if ! [ -z "${IMG_TYPES_ARR[PNG]}" ]; then
-	TOOLS[PNG]="pngcrush optipng pngout advpng"
-fi
-if ! [ -z "${IMG_TYPES_ARR[GIF]}" ]; then
-	TOOLS[GIF]="gifsicle"
-fi
+declare -A TOOLS=(
+	[JPG]="jpegoptim jpegtran djpeg cjpeg"
+	[PNG]="pngcrush optipng pngout advpng"
+	[GIF]="gifsicle"
+)
 
 # Hook: after-init-tools
 includeExtensions after-init-tools
@@ -1486,6 +1526,28 @@ else
 				;;
 			2)
 				echo
+				echo "Select JPEG library to install:"
+				echo "1. libjpeg (default)"
+				echo "2. libjpeg-turbo"
+				echo "3. mozjpeg"
+				echo
+				echo -n "Enter selection [1] > "
+				read jpeg_lib
+				case "$jpeg_lib" in
+				2)
+					DEPS_DEBIAN=${DEPS_DEBIAN/libjpeg-progs/libjpeg-turbo-progs}
+					DEPS_REDHAT=${DEPS_REDHAT/libjpeg*/libjpeg-turbo*}
+					DEPS_MACOS=${DEPS_MACOS/libjpeg/jpeg-turbo}
+					;;
+				3)
+					DEPS_DEBIAN=${DEPS_DEBIAN/libjpeg-progs/mozjpeg}
+					DEPS_REDHAT=${DEPS_REDHAT/libjpeg*/mozjpeg}
+					DEPS_MACOS=${DEPS_MACOS/libjpeg/mozjpeg}
+					;;
+				*)
+					# Default libjpeg - no changes needed
+					;;
+				esac
 				installDeps
 				echo "Exiting..."
 				echo
@@ -1506,6 +1568,28 @@ else
 				;;
 			1)
 				echo
+				echo "Select JPEG library to install:"
+				echo "1. libjpeg (default)"
+				echo "2. libjpeg-turbo"
+				echo "3. mozjpeg"
+				echo
+				echo -n "Enter selection [1] > "
+				read jpeg_lib
+				case "$jpeg_lib" in
+				2)
+					DEPS_DEBIAN=${DEPS_DEBIAN/libjpeg-progs/libjpeg-turbo-progs}
+					DEPS_REDHAT=${DEPS_REDHAT/libjpeg*/libjpeg-turbo*}
+					DEPS_MACOS=${DEPS_MACOS/libjpeg/jpeg-turbo}
+					;;
+				3)
+					DEPS_DEBIAN=${DEPS_DEBIAN/libjpeg-progs/mozjpeg}
+					DEPS_REDHAT=${DEPS_REDHAT/libjpeg*/mozjpeg}
+					DEPS_MACOS=${DEPS_MACOS/libjpeg/mozjpeg}
+					;;
+				*)
+					# Default libjpeg - no changes needed
+					;;
+				esac
 				installDeps
 				echo "Exiting..."
 				echo
@@ -1753,6 +1837,7 @@ if ! [ -z "$IMAGES" ]; then
 				$SETCOLOR_NORMAL
 			fi
 
+			# Resmush.it optimization
 			if [ $RESMUSH_ENABLED -eq 1 ]; then
 				if [[ $SIZE_BEFORE -lt $RESMUSH_MAXFILESIZE ]]; then
 					echo "Sending picture to resmush.it API..."
