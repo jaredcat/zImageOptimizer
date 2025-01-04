@@ -294,13 +294,14 @@ checkDir() {
 }
 
 checkDirPermissions() {
+	local test_file="$1/checkDirPermissions"
 	cd "$1" 2>/dev/null
-	touch checkDirPermissions 2>/dev/null
-	if ! [ -f "$1/checkDirPermissions" ]; then
+	touch "$test_file" 2>/dev/null
+	if ! [ -f "$test_file" ]; then
 		echo
 		$SETCOLOR_FAILURE
 		if [ -z "$2" ]; then
-			echo "Current user have no permissions to directory $1!" 1>&2
+			echo "Current user does not have write permission to the directory $1!" 1>&2
 		else
 			echo "$2" 1>&2
 		fi
@@ -308,7 +309,7 @@ checkDirPermissions() {
 		echo
 		exit 1
 	else
-		rm "$1/checkDirPermissions"
+		rm "$test_file"
 	fi
 }
 
@@ -852,8 +853,8 @@ fixTimeMarker() {
 }
 
 updateModifyTime() {
-	if [ $NEW_ONLY -eq 1 ]; then
-		touch "$IMAGE" -r "$TIME_MARKER_FULL_PATH" >/dev/null
+	if [ $NEW_ONLY -eq 1 ] && [ -n "$image" ] && [ -f "$image" ]; then
+		touch "$image" -r "$TIME_MARKER_FULL_PATH" >/dev/null 2>&1
 	fi
 }
 
