@@ -204,7 +204,10 @@ processImages() {
 	initializeVariables
 	export IMAGES_TOTAL=$total
 
-	# Convert input to array
+	# Change to target directory before processing
+	cd "$FULL_DIR_PATH" || exit 1
+
+	# Convert input to array, handling spaces correctly
 	mapfile -t image_array < <(echo "$images" | grep -v '^$')
 
 	# Initialize stats file with zeros
@@ -233,6 +236,9 @@ processImages() {
 
 	# Clean up
 	rm -f "${TMP_PATH}/progress.tmp" "${TMP_PATH}/stats.tmp"
+
+	# Return to original directory
+	cd "$ORIGINAL_DIR" || exit 1
 
 	displayFinalStats
 }
@@ -267,19 +273,29 @@ sayWait() {
 }
 
 cdAndCheck() {
-	cd "$1" 2>/dev/null
-	if ! [ "$(pwd)" = "$1" ]; then
+	local target_dir
+	target_dir=$(readlink -f "$1") || {
+		echo "Failed to resolve path: $1"
+		exit 1
+	}
+
+	if [ $DEBUG -eq 1 ]; then
+		echo "Debug: Attempting cd to: '$target_dir'"
+	fi
+
+	cd "$target_dir" 2>/dev/null || {
 		echo
 		$SETCOLOR_FAILURE
 		if [ -z "$2" ]; then
-			echo "Can't get up in a directory $1!" 1>&2
+			echo "Can't change to directory: '$target_dir'" 1>&2
+			echo "Current directory: $(pwd)" 1>&2
 		else
 			echo "$2" 1>&2
 		fi
 		$SETCOLOR_NORMAL
 		echo
 		exit 1
-	fi
+	}
 }
 
 checkDir() {
@@ -1585,8 +1601,19 @@ fi
 if [ $CHECK_ONLY -eq 0 ]; then
 
 	DIR_PATH=$(echo "$DIR_PATH" | sed 's/\/$//')
+
+	# Add debug output
+	if [ $DEBUG -eq 1 ]; then
+		echo "Debug: Checking directory path: '$DIR_PATH'"
+	fi
+
 	checkParm "$DIR_PATH" "Path to files not set in -p(--path) option!"
 	checkDir "$DIR_PATH"
+
+	if [ $DEBUG -eq 1 ]; then
+		echo "Debug: Changing to directory: '$DIR_PATH'"
+	fi
+
 	cdAndCheck "$DIR_PATH"
 	checkDirPermissions "$DIR_PATH"
 
@@ -1832,9 +1859,43 @@ if [ $DEBUG -eq 1 ]; then
 	echo "Search pattern: $FIND_NAMES"
 fi
 # Find images
-IMAGES=$(find "$DIR_PATH" $FIND_INCLUDE \( $FIND_NAMES \))
-if [ ! -z "$EXCLUDE_LIST" ]; then
-	IMAGES=$(echo "$IMAGES" | findExclude)
+if [ -d "$DIR_PATH" ]; then
+	# Save current directory
+	ORIGINAL_DIR=$(pwd)
+
+	# Get absolute path
+	DIR_PATH=$(readlink -f "$DIR_PATH")
+
+	# Verify directory exists after resolving path
+	if [ ! -d "$DIR_PATH" ]; then
+		echo "Directory not found after resolving path: $DIR_PATH"
+		exit 1
+	fi
+
+	# Change to target directory
+	if ! cd "$DIR_PATH" 2>/dev/null; then
+		echo "Cannot access directory: $DIR_PATH"
+		exit 1
+	fi
+
+	FULL_DIR_PATH=$(pwd)
+
+	if [ $DEBUG -eq 1 ]; then
+		echo "Debug: Current directory: $(pwd)"
+		echo "Debug: FULL_DIR_PATH: $FULL_DIR_PATH"
+	fi
+
+	# Find images from current directory
+	IMAGES=$(find . $FIND_INCLUDE \( $FIND_NAMES \) -print0 2>/dev/null | tr '\0' '\n')
+	if [ ! -z "$EXCLUDE_LIST" ]; then
+		IMAGES=$(echo "$IMAGES" | findExclude)
+	fi
+
+	# Return to original directory
+	cd "$ORIGINAL_DIR" || exit 1
+else
+	echo "Directory not found: $DIR_PATH"
+	exit 1
 fi
 
 # Num of images
