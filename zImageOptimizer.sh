@@ -1848,6 +1848,13 @@ else
 			echo
 			exit 0
 		fi
+		else
+		if [ $CHECK_ONLY -eq 1 ]; then
+			installDeps
+			echo "Exiting..."
+			echo
+			exit 0
+		fi
 	fi
 fi
 
@@ -1903,6 +1910,11 @@ IMAGES_TOTAL=$(echo "$IMAGES" | wc -l)
 
 # If images found
 if [ ! -z "$IMAGES" ]; then
+
+	# Unlock
+	if [[ $UNLOCK -eq 1 ]]; then
+		unlockDir
+	fi
 
 	# Unlock
 	if [[ $UNLOCK -eq 1 ]]; then

@@ -8,6 +8,7 @@ Simple bash script for lossless image optimizing JPEG, PNG and GIF images in a s
 - works recursively;
 - checks optimization tools after the start;
 - option for automatic install dependencies and optimization tools if one or more of it is not found (see supported distributions [here](https://github.com/zevilz/zImageOptimizer#automatical-installing-dependencies));
+- option for automatic install dependencies and optimization tools if one or more of it is not found (see supported distributions [here](https://github.com/zevilz/zImageOptimizer#automatical-installing-dependencies));
 - readable output info and total info after optimization;
 - no limit for a file size (limited only by hardware);
 - no limit for a number of files;
@@ -132,6 +133,7 @@ bash zImageOptimizer.sh -p /path/to/files -n
 ```
 
 Notice: by default the time marker file created in working a directory which set in `-p (--path)` option with a filename **.timeMarker**.
+Notice: by default the time marker file created in working a directory which set in `-p (--path)` option with a filename **.timeMarker**.
 
 #### Custom time marker name
 
@@ -176,6 +178,7 @@ Also you may collect all markers in own directory:
 0 1 * * * /bin/bash zImageOptimizer.sh -p /second/directory -q -n -m /path/to/markers/directory/secondMarkerName
 ```
 
+Notice: use `-l (--less)` option if you want exclude optimizing process in cron email messages
 Notice: use `-l (--less)` option if you want exclude optimizing process in cron email messages
 
 #### Manually create/modify the time marker file
@@ -236,6 +239,7 @@ docker run -it -u "$UID:$GID" -d --volume /mnt/ImagesHundred/marker:/work/marker
 Notice: curent user must be root or user with sudo access.
 
 Start the script in the optimization mode (`-p|--path`) or the checking tools mode (`-c|--check-only`, recommended) if you want to install dependencies automatically. It will check installed tools and printing a choise option dialog if one or more tools not found. Select **Install dependencies and exit** option by typing a appropriate number and press enter. The script will install dependencies based on your platform, distribution and package manager. You may need to enter a password and confirm actions during installation dependencies. Restart script to recheck installed tools after that.
+Start the script in the optimization mode (`-p|--path`) or the checking tools mode (`-c|--check-only`, recommended) if you want to install dependencies automatically. It will check installed tools and printing a choise option dialog if one or more tools not found. Select **Install dependencies and exit** option by typing a appropriate number and press enter. The script will install dependencies based on your platform, distribution and package manager. You may need to enter a password and confirm actions during installation dependencies. Restart script to recheck installed tools after that.
 
 Supported on:
 
@@ -248,6 +252,7 @@ Supported on:
   - Fedora 24+
 - FreeBSD 10+ (i686/amd64)
 - MacOS 10+
+- MacOS 10+
 
 Tested on:
 
@@ -255,6 +260,10 @@ Tested on:
   - Debian 7.11 i686 minimal
   - Debian 8.9 i686 minimal
   - Debian 9.2 amd64
+  - Debian 10 i686
+  - Debian 10 amd64
+  - Debian 11 amd64
+  - Debian 12 amd64
   - Debian 10 i686
   - Debian 10 amd64
   - Debian 11 amd64
@@ -454,9 +463,11 @@ BINARY_PATHS="/bin /usr/bin /usr/local/bin /your/custom/path"
 **I have errors `djpeg: can't open /tmp/*` and `cjpeg: can't open /tmp/*` during optimization**
 
 You have not write access to the directory /tmp. Tools djpeg and cjpeg use this directory for temporary files. Use `-tmp (--tmp-path)` option for set custom path.
+You have not write access to the directory /tmp. Tools djpeg and cjpeg use this directory for temporary files. Use `-tmp (--tmp-path)` option for set custom path.
 
 **I run the script but have error `The directory is already locked by another script run! Exiting...`**
 
+The script is already running in specified directory. If not, previous run of the script was not completed correctly. Delete dir from lock file (`/tmp/zio.lock` by default) or delete it manually and repeat. Also you can add `--unlock` option in next launch (dir automatically delete from lock file).
 The script is already running in specified directory. If not, previous run of the script was not completed correctly. Delete dir from lock file (`/tmp/zio.lock` by default) or delete it manually and repeat. Also you can add `--unlock` option in next launch (dir automatically delete from lock file).
 
 ## TODO
@@ -468,9 +479,14 @@ The script is already running in specified directory. If not, previous run of th
 - [x] ~~add support for optimize gif images~~
 - [x] ~~add support for automatic install dependencies on other platforms and distributions with other package managers~~
 - [ ] add support for automatic install dependencies on others linux distributions
+- [x] ~~add support for automatic install dependencies on other platforms and distributions with other package managers~~
+- [ ] add support for automatic install dependencies on others linux distributions
 - [ ] add support for parallel optimization
 - [ ] even more to improve results of compression
 - [ ] add SVG support
+- [ ] add WebP optimizing support (converting to WebP supported via [extension](https://github.com/zevilz/zImageOptimizer-extensions#create_webp))
+- [ ] add support for detect wrong files extensions
+- [ ] add support for convert or rename images with wrong files extensions
 - [ ] add WebP optimizing support (converting to WebP supported via [extension](https://github.com/zevilz/zImageOptimizer-extensions#create_webp))
 - [ ] add support for detect wrong files extensions
 - [ ] add support for convert or rename images with wrong files extensions
@@ -519,14 +535,20 @@ Do you like the script? Would you like to support its development? Feel free to 
 - 27.02.2018 - 0.9.2 - fixed PNG file permissions if the script does not work from files owner
 - 27.02.2018 - 0.9.1 - [added new features](https://github.com/zevilz/zImageOptimizer/releases/tag/0.9.1) and bugfixes
 - 25.02.2018 - 0.9.0 - added support for working the script on MacOS 10.10+ with automatic install dependencies
+- 25.02.2018 - 0.9.0 - added support for working the script on MacOS 10.10+ with automatic install dependencies
 - 24.02.2018 - 0.8.1 - [added new parameter, updated info after optimizing, small fixes and small code refactoring](https://github.com/zevilz/zImageOptimizer/releases/tag/0.8.1)
 - 04.12.2017 - 0.8.0 - [new features, bugfixes and code refactoring](https://github.com/zevilz/zImageOptimizer/releases/tag/0.8.0)
+- 30.11.2017 - 0.7.0 - added support for working the script on FreeBSD with automatic install dependencies, [bug fixes and more](https://github.com/zevilz/zImageOptimizer/releases/tag/0.7.0)
+- 28.11.2017 - 0.6.0 - added support for automatic install dependencies on RHEL 6+ and Fedora 24+
 - 30.11.2017 - 0.7.0 - added support for working the script on FreeBSD with automatic install dependencies, [bug fixes and more](https://github.com/zevilz/zImageOptimizer/releases/tag/0.7.0)
 - 28.11.2017 - 0.6.0 - added support for automatic install dependencies on RHEL 6+ and Fedora 24+
 - 25.11.2017 - 0.5.0 - bug fixes and code refactoring
 - 25.11.2017 - 0.4.0 - added support for automatic install dependencies on Debian 7.* and some bugfixes
 - 23.11.2017 - 0.3.0 - added support for automatic install dependencies on CentOS 6.*
+- 25.11.2017 - 0.4.0 - added support for automatic install dependencies on Debian 7.* and some bugfixes
+- 23.11.2017 - 0.3.0 - added support for automatic install dependencies on CentOS 6.*
 - 22.11.2017 - 0.2.3 - some bug fixes
+- 21.11.2017 - 0.2.2 - added support for automatic install dependencies on CentOS 7.*
 - 21.11.2017 - 0.2.2 - added support for automatic install dependencies on CentOS 7.*
 - 20.11.2017 - 0.2.1 - some bug fixes
 - 20.11.2017 - 0.2.0 - added [some features](https://github.com/zevilz/zImageOptimizer/releases/tag/0.2.0) and code refactoring
