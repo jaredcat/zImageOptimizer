@@ -29,18 +29,16 @@ initializeVariables() {
 cleanup() {
 	echo -e "\nScript interrupted by user. Cleaning up..."
 
-	# Remove any temporary files
-	if [ -f "${TMP_PATH}/stats.tmp" ]; then
-		rm -f "${TMP_PATH}/stats.tmp"
-	fi
-	if [ -f "${TMP_PATH}/progress.tmp" ]; then
-		rm -f "${TMP_PATH}/progress.tmp"
-	fi
+	# Remove all temporary files
+	rm -f "${TMP_PATH}/stats.tmp" "${TMP_PATH}/progress.tmp"
 
 	# Remove any backup files
 	if [ "$BACKUP" = "1" ]; then
 		rm -f "$TMP_PATH"/*.bkp
 	fi
+
+	# Remove any PPM temporary files from failed optimizations
+	rm -f "${TMP_PATH}"/*.ppm
 
 	# Unlock the directory
 	unlockDir
@@ -53,13 +51,28 @@ showProgressBar() {
 	local current=$1
 	local total=$2
 	local width=50
-	local percentage=$((current * 100 / total))
-	local completed=$((width * current / total))
+
+	# Prevent division by zero and invalid inputs
+	if [ -z "$total" ] || [ -z "$current" ] || [ "$total" -le 0 ]; then
+		return 1
+	fi
+
+	# Convert inputs to integers
+	current=$(($current + 0))
+	total=$(($total + 0))
+
+	# Ensure current doesn't exceed total
+	if [ "$current" -gt "$total" ]; then
+		current=$total
+	fi
+
+	local percentage=$(((current * 100) / total))
+	local completed=$(((width * current) / total))
 
 	printf "\r[" >&2
 	printf "%${completed}s" '' | tr ' ' '#' >&2
 	printf "%$((width - completed))s" '' | tr ' ' '-' >&2
-	printf "] %3d%% (%d/%d)" "$percentage" "$current" "$total"
+	printf "] %3d%% (%d/%d)" "$percentage" "$current" "$total" >&2
 }
 
 calculateStats() {
@@ -90,20 +103,16 @@ calculateStats() {
 displayOptimizationResult() {
 	local size_before=$1
 	local size_after=$2
-	local error_output=$3
+	local failed_status=$3
 	local size_before_scaled=$(echo "scale=1; $size_before/1024" | bc | sed 's/^\./0./')
 	local size_after_scaled=$(echo "scale=1; $size_after/1024" | bc | sed 's/^\./0./')
 
-	if [ $size_before -le $size_after ]; then
-		$SETCOLOR_FAILURE
-		echo -n "[NOT OPTIMIZED]"
-		$SETCOLOR_NORMAL
-		echo -n " ${size_before_scaled}Kb"
+	if [ "${failed_status:-0}" -ne 0 ]; then
+		printf "%s[FAILED]%s" "$($SETCOLOR_FAILURE)" "$($SETCOLOR_NORMAL)"
+	elif [ $size_before -le $size_after ]; then
+		printf "%s[NOT OPTIMIZED]%s ${size_before_scaled}Kb" "$($SETCOLOR_FAILURE)" "$($SETCOLOR_NORMAL)"
 	else
-		$SETCOLOR_SUCCESS
-		echo -n "[OPTIMIZED]"
-		$SETCOLOR_NORMAL
-		echo -n " ${size_before_scaled}Kb -> ${size_after_scaled}Kb"
+		printf "%s[OPTIMIZED]%s ${size_before_scaled}Kb -> ${size_after_scaled}Kb" "$($SETCOLOR_SUCCESS)" "$($SETCOLOR_NORMAL)"
 	fi
 	echo
 }
@@ -154,11 +163,10 @@ optimizeImage() {
 # Main processing function
 processImage() {
 	local image="$1"
+	local failed=0
 
 	if [ ! -f "$image" ]; then
-		$SETCOLOR_FAILURE
-		echo "[SKIPPING - NOT EXISTS]"
-		$SETCOLOR_NORMAL
+		printf "%s[SKIPPING - NOT EXISTS]%s\n" "$($SETCOLOR_FAILURE)" "$($SETCOLOR_NORMAL)"
 		return 1
 	fi
 
@@ -167,7 +175,8 @@ processImage() {
 
 	# Backup and optimize
 	handleBackup "$image"
-	optimizeImage "$image" || return 1
+	optimizeImage "$image"
+	local failed_status=$?
 
 	# Get final size and calculate stats
 	local size_after=$(wc -c "$image" | awk '{print $1}')
@@ -180,9 +189,9 @@ processImage() {
 
 	# Calculate and display results
 	calculateStats "$size_before" "$size_after"
-	[ $LESS -eq 0 ] && displayOptimizationResult "$size_before" "$size_after" "$error_output"
+	[ $LESS -eq 0 ] && displayOptimizationResult "$size_before" "$size_after" "$failed_status"
 
-	return 0 # Always return success unless critical error
+	return 0
 }
 
 # Main optimization loop
@@ -232,12 +241,9 @@ processImages() {
 displayFinalStats() {
 	echo -e "\n\nOptimization Summary:"
 	echo "----------------------"
-	echo -n "Input: "
-	readableSize $INPUT
-	echo "Output: "
-	readableSize $OUTPUT
-	echo "Saved: "
-	readableSize $SAVED_SIZE
+	printf "Input: %s\n" "$(readableSize $INPUT)"
+	printf "Output: %s\n" "$(readableSize $OUTPUT)"
+	printf "Saved: %s\n" "$(readableSize $SAVED_SIZE)"
 	if [ "$INPUT" -gt 0 ]; then
 		echo " ($(echo "scale=2; ($INPUT-$OUTPUT)*100/$INPUT" | bc | sed 's/^\./0./')%)"
 	else
@@ -247,8 +253,7 @@ displayFinalStats() {
 
 	END_TIME=$(date +%s)
 	TOTAL_TIME=$((END_TIME - START_TIME))
-	echo -n "Total Time: "
-	readableTime $TOTAL_TIME
+	printf "Total Time: %s" "$(readableSize $TOTAL_TIME)"
 }
 
 sayWait() {
@@ -323,6 +328,26 @@ inArray() {
 	shift
 	local IFS="|"
 	[[ "$*" =~ (^|[|])$match($|[|]) ]]
+}
+
+installMozJPEG() {
+	$SUDO apt-get install cmake nasm libpng-dev -y || return 1
+
+	git clone https://github.com/mozilla/mozjpeg.git || return 1
+	cd mozjpeg || return 1
+	mkdir -p build && cd build || return 1
+
+	cmake -G"Unix Makefiles" \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DENABLE_STATIC=TRUE \
+		-DCMAKE_INSTALL_PREFIX=/usr/local \
+		.. || return 1
+
+	make || return 1
+	$SUDO make install || return 1
+	cd ../..
+	$SUDO rm -rf mozjpeg
+	return 0
 }
 
 installDeps() {
@@ -461,20 +486,8 @@ installDeps() {
 				# Handle mozjpeg installation separately
 				if [[ "$DEPS_DEBIAN" == *"mozjpeg"* ]]; then
 					DEPS_DEBIAN=${DEPS_DEBIAN/mozjpeg/}
-					$SUDO apt-get install $DEPS_DEBIAN cmake nasm libpng-dev -y
-
-					# Build and install mozjpeg
-					git clone https://github.com/mozilla/mozjpeg.git
-					cd mozjpeg
-					mkdir -p build && cd build
-					cmake -G"Unix Makefiles" \
-						-DCMAKE_BUILD_TYPE=Release \
-						-DENABLE_STATIC=TRUE \
-						-DCMAKE_INSTALL_PREFIX=/usr/local \
-						..
-					make
-					$SUDO make install
-					cd ../..
+					$SUDO apt-get install $DEPS_DEBIAN -y
+					installMozJPEG
 				else
 					$SUDO apt-get install $DEPS_DEBIAN -y
 				fi
@@ -566,21 +579,8 @@ installDeps() {
 
 				if [[ "$DEPS_REDHAT" == *"mozjpeg"* ]]; then
 					DEPS_REDHAT=${DEPS_REDHAT/mozjpeg/}
-					$SUDO yum install $DEPS_REDHAT cmake nasm libpng-devel -y
-
-					# Build and install mozjpeg
-					git clone https://github.com/mozilla/mozjpeg.git
-					cd mozjpeg
-					mkdir build && cd build
-					cmake -G"Unix Makefiles" \
-						-DCMAKE_BUILD_TYPE=Release \
-						-DENABLE_STATIC=TRUE \
-						-DCMAKE_INSTALL_PREFIX=/usr/local \
-						..
-					make
-					$SUDO make install
-					cd ../..
-					$SUDO rm -rf mozjpeg
+					$SUDO yum install $DEPS_REDHAT -y
+					installMozJPEG
 				else
 					$SUDO yum install $DEPS_REDHAT -y
 				fi
@@ -859,71 +859,58 @@ updateModifyTime() {
 
 optimJpegoptim() {
 	if [ $DEBUG -eq 1 ]; then
-		echo -n "Using: optimJpegoptim"
-		echo
+		printf "\Using: jpegoptim"
 	fi
+
 	jpegoptim --strip-all "$1" >/dev/null
 }
 
 optimJpegtran() {
 	if [ $DEBUG -eq 1 ]; then
-		echo "Using: optimJpegtran"
-		echo
+		printf "\nUsing: jpegtran"
 	fi
+
 	jpegtran -progressive -copy none -optimize "$1" >/dev/null
 }
 
 optimXjpeg() {
 	if [ $DEBUG -eq 1 ]; then
-		echo -n "Using: optimXjpeg"
-		echo "Input image: $1"
+		printf "\nUsing: cjpeg\nResult: "
 	fi
 
 	local image="$1"
 	local temp_file="$TMP_PATH/$(basename "$image").ppm"
 
 	# Decompress with djpeg, capturing any error output
-	local djpeg_output
-	djpeg_output=$(djpeg -outfile "$temp_file" "$image" 2>&1)
-	local djpeg_status=$?
-
-	if [ $djpeg_status -ne 0 ]; then
-		[ $DEBUG -eq 1 ] && echo "djpeg failed with status $djpeg_status: $djpeg_output"
+	if ! djpeg -outfile "$temp_file" "$image" 2>/dev/null; then
+		[ $DEBUG -eq 1 ] && echo "djpeg failed to process $image"
+		rm -f "$temp_file" # Cleanup empty file if it exists
 		return 1
 	fi
 
-	# Check if temp file exists and is not empty
-	if [ ! -f "$temp_file" ] || [ ! -s "$temp_file" ]; then
+	# Check if temp file exists and has size
+	if [ ! -s "$temp_file" ]; then
 		[ $DEBUG -eq 1 ] && echo "Temp file missing or empty: $temp_file"
+		rm -f "$temp_file" # Cleanup empty file if it exists
 		return 1
 	fi
 
-	# Check if cjpeg is mozjpeg version
+	# Use mozjpeg-specific options if available
 	if cjpeg -help 2>&1 | grep -q -- "-quality"; then
-		# Use mozjpeg-specific options
 		cjpeg -quality 85 -optimize -progressive -outfile "$image" "$temp_file" >/dev/null 2>&1
 	else
-		# Fallback to standard options (quality 75)
 		cjpeg -optimize -progressive -outfile "$image" "$temp_file" >/dev/null 2>&1
 	fi
 
 	local status=$?
-
-	# Cleanup temp file
 	rm -f "$temp_file"
-
-	if [ $DEBUG -eq 1 ]; then
-		if [ $status -eq 0 ]; then
-			echo "Optimization completed successfully"
-		else
-			echo "cjpeg failed with status $status"
-		fi
-	fi
-
 	return $status
 }
 
 optimPngcrush() {
+	if [ $DEBUG -eq 1 ]; then
+		printf "\nUsing: pngcrush\nResult: "
+	fi
 	IMAGE="$1"
 	IMAGE_DIR=$(dirname "$IMAGE")
 	cd "$IMAGE_DIR"
@@ -931,6 +918,10 @@ optimPngcrush() {
 }
 
 optimOptipng() {
+	if [ $DEBUG -eq 1 ]; then
+		printf "\nUsing: optipng\nResult: "
+	fi
+
 	OPTIPNG_V=$(optipng -v | head -n1 | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+' | cut -d '.' -f2)
 	if ! [ -z $OPTIPNG_V ]; then
 		if [ $OPTIPNG_V -ge 7 ]; then
@@ -944,58 +935,76 @@ optimOptipng() {
 }
 
 optimPngout() {
+	if [ $DEBUG -eq 1 ]; then
+		printf "\nUsing: pngout\nResult: "
+	fi
+
 	pngout -q -y -k0 -s0 "$1" >/dev/null
 }
 
 optimAdvpng() {
+	if [ $DEBUG -eq 1 ]; then
+		printf "\nUsing: advpng\nResult: "
+	fi
+
 	advpng -z -4 "$1" >/dev/null
 }
 
 optimGifsicle() {
+	if [ $DEBUG -eq 1 ]; then
+		printf "\nUsing: gifsicle\nResult: "
+	fi
+
 	gifsicle --optimize=3 -b "$1" >/dev/null
 	#gifsicle --optimize=3 --lossy=30 -b "$IMAGE" # for lossy optimize
 }
 
 optimJPG() {
+	if [ $DEBUG -eq 1 ]; then
+		printf "\nInput image: $1"
+	fi
 
 	if [[ $ISSET_djpeg -eq 1 && $ISSET_cjpeg -eq 1 ]]; then
 		optimXjpeg "$1"
-		return
-	fi
-	if [[ $ISSET_jpegoptim -eq 1 ]]; then
+	elif [[ $ISSET_jpegoptim -eq 1 ]]; then
 		optimJpegoptim "$1"
-		return
-	fi
-
-	if [[ $ISSET_jpegtran -eq 1 ]]; then
+	elif [[ $ISSET_jpegtran -eq 1 ]]; then
 		optimJpegtran "$1"
-		return
+	else
+		echo "No JPEG optimizer found"
+		return 1
 	fi
-
 }
 
 optimPNG() {
+	if [ $DEBUG -eq 1 ]; then
+		printf "\nInput image: $1"
+	fi
 
 	if [[ $ISSET_optipng -eq 1 ]]; then
 		optimOptipng "$1"
-	fi
-
-	if [[ $ISSET_pngcrush -eq 1 ]]; then
+	elif [[ $ISSET_pngcrush -eq 1 ]]; then
 		optimPngcrush "$1"
-	fi
-
-	if [[ $ISSET_pngout -eq 1 ]]; then
+	elif [[ $ISSET_pngout -eq 1 ]]; then
 		optimPngout "$1"
-	fi
-
-	if [[ $ISSET_advpng -eq 1 ]]; then
+	elif [[ $ISSET_advpng -eq 1 ]]; then
 		optimAdvpng "$1"
+	else
+		echo "No PNG optimizer found"
+		return 1
 	fi
 }
 
 optimGIF() {
+	if [ $DEBUG -eq 1 ]; then
+		printf "\nInput image: $1"
+	fi
+
 	if [[ $ISSET_gifsicle -eq 1 ]]; then
 		optimGifsicle "$1"
+	else
+		echo "No GIF optimizer found"
+		return 1
 	fi
 }
 
@@ -1270,7 +1279,6 @@ else
 	SUDO="sudo"
 fi
 
-# System vars for reSmush.it
 # System vars for reSmush.it
 RESMUSH_ENABLED=0
 RESMUSH_API_URL="http://api.resmush.it"
