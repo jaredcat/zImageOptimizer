@@ -253,7 +253,7 @@ displayFinalStats() {
 
 	END_TIME=$(date +%s)
 	TOTAL_TIME=$((END_TIME - START_TIME))
-	printf "Total Time: %s" "$(readableSize $TOTAL_TIME)"
+	printf "Total Time: %s" "$(readableTime $TOTAL_TIME)"
 }
 
 sayWait() {
